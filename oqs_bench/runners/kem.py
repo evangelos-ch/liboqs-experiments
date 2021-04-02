@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Tuple
+from time import time
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, ec, padding
 
@@ -36,19 +37,28 @@ class OQSKEMRunner(KEMRunner):
 
     def generate_key(self) -> KeyPair:
         with oqs.KeyEncapsulation(self.system) as client:
+            start = time()
             public_key = client.generate_keypair()
             secret_key = client.export_secret_key()
+            end = time()
+        self.keygen_time = end - start
         return public_key, secret_key
     
     def encrypt(self, public_key: bytes, plaintext: Plaintext) -> Ciphertext:
         # TODO Encrypt *this* plaintext
         with oqs.KeyEncapsulation(self.system) as client:
+            start = time()
             ciphertext, _ = client.encap_secret(public_key)
+            end = time()
+        self.encrypt_time = end - start
         return ciphertext
     
     def decrypt(self, secret_key: bytes, ciphertext: Ciphertext) -> Plaintext:
         with oqs.KeyEncapsulation(self.system, secret_key) as client:
+            start = time()
             plaintext = client.decap_secret(ciphertext)
+            end = time()
+        self.decrypt_time = end - start
         return plaintext
 
 class RSAKEMRunner(KEMRunner):
@@ -56,6 +66,7 @@ class RSAKEMRunner(KEMRunner):
     PADDING = padding.OAEP(mgf=padding.MGF1(algorithm=HASH), algorithm=HASH, label=None)
 
     def generate_key(self) -> KeyPair:
+        start = time()
         private_key = rsa.generate_private_key(
             public_exponent=65537,
             key_size=int(self.variant)
@@ -71,16 +82,24 @@ class RSAKEMRunner(KEMRunner):
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         )
+        end = time()
+        self.keygen_time = end - start
         return public_key_bytes,  private_key_bytes
 
     def encrypt(self, public_key: bytes, plaintext: Plaintext) -> Ciphertext:
+        start = time()
         public_key_loaded = serialization.load_pem_public_key(public_key)
         ciphertext = public_key_loaded.encrypt(plaintext, padding=self.PADDING)
+        end = time()
+        self.encrypt_time = end - start
         return ciphertext
     
     def decrypt(self, secret_key: bytes, ciphertext: Ciphertext) -> Plaintext:
+        start = time()
         private_key_loaded = serialization.load_pem_private_key(secret_key, password=None)
         plaintext = private_key_loaded.decrypt(ciphertext, padding=self.PADDING)
+        end = time()
+        self.decrypt_time = end - start
         return plaintext
 
 class ECCKEMRunner(RSAKEMRunner):
@@ -92,7 +111,6 @@ class ECCKEMRunner(RSAKEMRunner):
             format=serialization.PrivateFormat.TraditionalOpenSSL,
             encryption_algorithm=serialization.NoEncryption()
         )
-
         public_key = private_key.public_key()
         public_key_bytes = public_key.public_bytes(
             encoding=serialization.Encoding.PEM,
